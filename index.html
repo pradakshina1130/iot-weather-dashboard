@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Mobile Dashboard Node</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background: #0f172a;
+        }
+
+        .glass {
+            background: rgba(30, 41, 59, 0.92);
+            border: 1px solid #334155;
+        }
+
+        .mono {
+            font-family: Consolas, Monaco, "Courier New", monospace;
+        }
+
+        textarea::-webkit-scrollbar,
+        #console::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        textarea::-webkit-scrollbar-track,
+        #console::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+
+        textarea::-webkit-scrollbar-thumb,
+        #console::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen text-slate-100 p-5 md:p-8">
+
+<div class="max-w-6xl mx-auto">
+
+    <!-- HEADER -->
+    <header class="flex flex-col md:flex-row md:items-center md:justify-between
+                   gap-3 border-b border-slate-700 pb-4">
+
+        <div>
+            <h1 class="text-3xl md:text-4xl font-black tracking-tight">
+                🌡️ IoT Mobile Dashboard Node
+            </h1>
+
+            <p class="text-slate-400 text-sm mt-1">
+                Real-time telemetry parser for your ESP32 / DHT22 sensor stream
+            </p>
+        </div>
+
+        <div id="status"
+             class="px-3 py-1 rounded-full text-xs font-bold uppercase
+                    bg-amber-500/20 text-amber-400
+                    border border-amber-500/30">
+            Awaiting Data
+        </div>
+    </header>
+
+    <!-- FIREBASE LIVE CONNECTION -->
+    <section class="mt-5 glass rounded-xl p-5">
+        <h2 class="font-bold text-lg">☁️ Firebase Live Connection</h2>
+        <p class="text-sm text-slate-400 mt-1">Sign in with the Firebase Authentication user you created. Sensor readings will then load automatically.</p>
+        <form id="firebaseLoginForm" class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+            <input id="firebaseEmail" type="email" autocomplete="username" required placeholder="Firebase user email" class="bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm outline-none focus:border-indigo-500">
+            <input id="firebasePassword" type="password" autocomplete="current-password" required placeholder="Firebase password" class="bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm outline-none focus:border-indigo-500">
+            <button id="firebaseLoginButton" type="submit" class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-5 py-3 font-bold">Sign in and connect</button>
+        </form>
+        <div class="flex flex-wrap items-center gap-3 mt-3">
+            <span id="firebaseConnectionStatus" class="text-sm text-amber-300">Not connected</span>
+            <button id="firebaseSignOutButton" type="button" class="hidden text-sm px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600">Sign out</button>
+        </div>
+        <p class="text-xs text-slate-500 mt-2">Your password is entered into the sign-in form and is not saved in this HTML file. Use this page over HTTPS when hosting it.</p>
+    </section>
+
+
+    <!-- TOP CARDS -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-5">
+
+        <!-- TEMPERATURE -->
+        <div class="glass rounded-xl p-5">
+
+            <h2 class="text-sm font-semibold text-slate-400 uppercase">
+                Live Temperature Reading
+            </h2>
+
+            <div class="flex items-baseline justify-center gap-2 mt-8 mb-5">
+                <span id="tempValue"
+                      class="text-6xl font-black text-emerald-400">
+                    --.-
+                </span>
+
+                <span class="text-2xl font-bold text-slate-400">
+                    °C
+                </span>
+            </div>
+
+            <div class="w-full h-2.5 rounded-full bg-slate-700 overflow-hidden">
+                <div id="tempBar"
+                     class="h-full bg-emerald-500 transition-all duration-300"
+                     style="width:0%">
+                </div>
+            </div>
+
+            <div class="flex justify-between text-xs mt-3">
+                <span class="text-slate-400">
+                    Safe Zone (&lt;60°C)
+                </span>
+
+                <span class="text-rose-400 font-bold">
+                    Limit: 60°C
+                </span>
+            </div>
+
+        </div>
+
+
+        <!-- FAHRENHEIT -->
+        <div class="glass rounded-xl p-5">
+
+            <h2 class="text-sm font-semibold text-slate-400 uppercase">
+                Fahrenheit Scale
+            </h2>
+
+            <div class="flex items-baseline justify-center gap-2 mt-8 mb-5">
+                <span id="fahrenheitValue"
+                      class="text-5xl font-black text-sky-400">
+                    --.-
+                </span>
+
+                <span class="text-2xl font-bold text-slate-400">
+                    °F
+                </span>
+            </div>
+
+            <div class="bg-slate-900 rounded-lg p-3 mono text-xs">
+                <div class="text-slate-500">
+                    Parsed from sensor output:
+                </div>
+
+                <div id="rawFahrenheit" class="text-sky-300 mt-1">
+                    No reading yet
+                </div>
+            </div>
+
+        </div>
+
+
+        <!-- HUMIDITY / METADATA -->
+        <div class="glass rounded-xl p-5">
+
+            <h2 class="text-sm font-semibold text-slate-400 uppercase">
+                Storage & Telemetry Metadata
+            </h2>
+
+            <div class="grid grid-cols-2 gap-3 mt-4">
+
+                <div class="bg-slate-900 rounded-lg p-3">
+                    <div class="text-xs text-slate-500">
+                        Packet Stream ID
+                    </div>
+
+                    <div id="packetId"
+                         class="text-lg font-bold text-indigo-300 mt-1">
+                        --
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 rounded-lg p-3">
+                    <div class="text-xs text-slate-500">
+                        Humidity
+                    </div>
+
+                    <div class="text-lg font-bold text-cyan-300 mt-1">
+                        <span id="humidityValue">--.-</span> %
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="mt-4 border-t border-slate-700 pt-3
+                        flex justify-between text-xs">
+
+                <span class="text-slate-500">
+                    Virtual Memory File Target:
+                </span>
+
+                <span class="text-indigo-300 mono">
+                    telemetry.dat
+                </span>
+
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- CHART + CONSOLE -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-5">
+
+        <!-- CHART -->
+        <article class="lg:col-span-2 glass rounded-xl p-5">
+
+            <div class="flex justify-between items-center mb-3">
+
+                <h2 class="font-bold">
+                    📊 Live Telemetry History Chart
+                </h2>
+
+                <button onclick="clearChart()"
+                        class="text-xs px-3 py-1 rounded-md
+                               bg-slate-700 hover:bg-slate-600">
+                    Clear Chart
+                </button>
+
+            </div>
+
+            <div class="relative h-[320px]">
+                <canvas id="telemetryChart"></canvas>
+            </div>
+
+        </article>
+
+
+        <!-- CONSOLE -->
+        <article class="glass rounded-xl p-5">
+
+            <h2 class="font-bold mb-3">
+                📋 Active File System & Data Console
+            </h2>
+
+            <div id="console"
+                 class="bg-slate-950 rounded-lg p-3
+                        h-[320px] overflow-y-auto mono text-xs
+                        border border-slate-800">
+
+                <div class="text-slate-500">
+                    [SYSTEM] Console online.
+                </div>
+
+                <div class="text-slate-500">
+                    [SYSTEM] Waiting for sensor data...
+                </div>
+
+            </div>
+
+        </article>
+
+    </section>
+
+</div>
+
+
+<script>
+
+    /* =====================================================
+       CONFIGURATION
+    ===================================================== */
+
+    const TEMP_LIMIT = 60;
+    const MAX_POINTS = 30;
+
+
+    /* =====================================================
+       ELEMENTS
+    ===================================================== */
+
+    const tempValue =
+        document.getElementById("tempValue");
+
+    const tempBar =
+        document.getElementById("tempBar");
+
+    const fahrenheitValue =
+        document.getElementById("fahrenheitValue");
+
+    const rawFahrenheit =
+        document.getElementById("rawFahrenheit");
+
+    const humidityValue =
+        document.getElementById("humidityValue");
+
+    const packetId =
+        document.getElementById("packetId");
+
+    const status =
+        document.getElementById("status");
+
+    const consoleBox =
+        document.getElementById("console");
+/* =====================================================
+       CHART
+    ===================================================== */
+
+    const ctx =
+        document.getElementById("telemetryChart")
+        .getContext("2d");
+
+    const telemetryChart =
+        new Chart(ctx, {
+
+            type: "line",
+
+            data: {
+
+                labels: [],
+
+                datasets: [
+
+                    {
+                        label: "Temperature (°C)",
+                        data: [],
+                        borderColor: "#34d399",
+                        backgroundColor:
+                            "rgba(52,211,153,0.08)",
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        tension: 0.25,
+                        fill: true
+                    },
+
+                    {
+                        label: "Humidity (%)",
+                        data: [],
+                        borderColor: "#22d3ee",
+                        backgroundColor:
+                            "rgba(34,211,238,0.05)",
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        tension: 0.25,
+                        fill: false
+                    },
+
+                    {
+                        label: "Safety Ceiling (60°C)",
+                        data: [],
+                        borderColor: "#fb7185",
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        borderDash: [7, 5],
+                        fill: false
+                    }
+
+                ]
+
+            },
+
+            options: {
+
+                responsive: true,
+
+                maintainAspectRatio: false,
+
+                interaction: {
+                    mode: "index",
+                    intersect: false
+                },
+
+                scales: {
+
+                    x: {
+                        grid: {
+                            color: "#334155"
+                        },
+
+                        ticks: {
+                            color: "#94a3b8",
+                            maxTicksLimit: 8
+                        }
+                    },
+
+                    y: {
+
+                        suggestedMin: -20,
+
+                        suggestedMax: 100,
+
+                        grid: {
+                            color: "#334155"
+                        },
+
+                        ticks: {
+                            color: "#94a3b8"
+                        }
+
+                    }
+
+                },
+
+                plugins: {
+
+                    legend: {
+                        labels: {
+                            color: "#f8fafc"
+                        }
+                    }
+
+                }
+
+            }
+
+        });
+
+
+    /* =====================================================
+       CONSOLE
+    ===================================================== */
+
+    function logMessage(message, type = "info") {
+
+        const line =
+            document.createElement("div");
+
+        const time =
+            new Date().toLocaleTimeString();
+
+        if (type === "error") {
+
+            line.className =
+                "text-rose-400 font-bold";
+
+            line.textContent =
+                `[${time}] [ERROR] ${message}`;
+
+        } else if (type === "success") {
+
+            line.className =
+                "text-emerald-400";
+
+            line.textContent =
+                `[${time}] [DATA] ${message}`;
+
+        } else if (type === "warning") {
+
+            line.className =
+                "text-amber-400";
+
+            line.textContent =
+                `[${time}] [WARN] ${message}`;
+
+        } else {
+
+            line.className =
+                "text-slate-500";
+
+            line.textContent =
+                `[${time}] [SYSTEM] ${message}`;
+        }
+
+        consoleBox.appendChild(line);
+
+        consoleBox.scrollTop =
+            consoleBox.scrollHeight;
+    }
+
+
+    /* =====================================================
+       STATUS
+    ===================================================== */
+
+    function setStatus(text, type) {
+
+        status.textContent = text;
+
+        if (type === "success") {
+
+            status.className =
+                "px-3 py-1 rounded-full text-xs font-bold uppercase " +
+                "bg-emerald-500/20 text-emerald-400 " +
+                "border border-emerald-500/30";
+
+        } else if (type === "error") {
+
+            status.className =
+                "px-3 py-1 rounded-full text-xs font-bold uppercase " +
+                "bg-rose-500/20 text-rose-400 " +
+                "border border-rose-500/30";
+
+        } else {
+
+            status.className =
+                "px-3 py-1 rounded-full text-xs font-bold uppercase " +
+                "bg-amber-500/20 text-amber-400 " +
+                "border border-amber-500/30";
+        }
+    }
+
+
+    /* =====================================================
+       UPDATE LATEST READING
+    ===================================================== */
+
+    function updateLatest(tempC, tempF, humidity, id) {
+
+        tempValue.textContent =
+            tempC.toFixed(1);
+
+        fahrenheitValue.textContent =
+            tempF.toFixed(1);
+
+        rawFahrenheit.textContent =
+            `${tempF.toFixed(1)} °F`;
+
+        humidityValue.textContent =
+            humidity.toFixed(1);
+
+        packetId.textContent =
+            `#${id}`;
+
+
+        /* Temperature bar */
+
+        const percentage =
+            Math.min(
+                Math.max(
+                    (tempC / TEMP_LIMIT) * 100,
+                    0
+                ),
+                100
+            );
+
+        tempBar.style.width =
+            `${percentage}%`;
+
+
+        /* Temperature color */
+
+        if (tempC >= TEMP_LIMIT) {
+
+            tempValue.className =
+                "text-6xl font-black text-rose-400";
+
+            tempBar.className =
+                "h-full bg-rose-500 transition-all duration-300";
+
+        } else if (tempC >= 40) {
+
+            tempValue.className =
+                "text-6xl font-black text-yellow-400";
+
+            tempBar.className =
+                "h-full bg-yellow-500 transition-all duration-300";
+
+        } else {
+
+            tempValue.className =
+                "text-6xl font-black text-emerald-400";
+
+            tempBar.className =
+                "h-full bg-emerald-500 transition-all duration-300";
+        }
+
+
+        setStatus("Data Received", "success");
+    }
+
+
+    /* =====================================================
+       ADD CHART POINT
+    ===================================================== */
+
+    function addChartPoint(tempC, humidity, id) {
+
+        const time =
+            new Date().toLocaleTimeString();
+
+        telemetryChart.data.labels.push(
+            `${id} • ${time}`
+        );
+
+        telemetryChart.data.datasets[0].data.push(
+            tempC
+        );
+
+        telemetryChart.data.datasets[1].data.push(
+            humidity
+        );
+
+        telemetryChart.data.datasets[2].data.push(
+            TEMP_LIMIT
+        );
+
+
+        while (
+            telemetryChart.data.labels.length >
+            MAX_POINTS
+        ) {
+
+            telemetryChart.data.labels.shift();
+
+            telemetryChart.data.datasets.forEach(
+                dataset => dataset.data.shift()
+            );
+        }
+
+
+        telemetryChart.update();
+    }
+
+    function clearChart() {
+
+        telemetryChart.data.labels = [];
+
+        telemetryChart.data.datasets.forEach(
+            dataset => {
+                dataset.data = [];
+            }
+        );
+
+        telemetryChart.update();
+
+        tempValue.textContent = "--.-";
+
+        fahrenheitValue.textContent = "--.-";
+
+        rawFahrenheit.textContent =
+            "No reading yet";
+
+        humidityValue.textContent = "--.-";
+
+        packetId.textContent = "--";
+
+        tempBar.style.width = "0%";
+
+        setStatus(
+            "Awaiting Data",
+            "idle"
+        );
+
+        logMessage(
+            "Chart and latest reading cleared.",
+            "info"
+        );
+    }
+
+    /* =====================================================
+       STARTUP
+    ===================================================== */
+
+    logMessage(
+        "Dashboard initialized. Waiting for sensor stream."
+    );
+
+    // Used by the Firebase listener to redraw the chart from database history.
+    const firebaseChartIds = new Set();
+
+    window.replaceChartFromFirebase = function(readings) {
+        telemetryChart.data.labels = [];
+        telemetryChart.data.datasets.forEach(dataset => dataset.data = []);
+        firebaseChartIds.clear();
+
+        const validReadings = readings.filter(reading => {
+            return Number.isFinite(Number(reading.temperatureC)) &&
+                   Number.isFinite(Number(reading.humidity));
+        }).slice(-MAX_POINTS);
+
+        validReadings.forEach((reading, index) => {
+            const tempC = Number(reading.temperatureC);
+            const humidity = Number(reading.humidity);
+            const id = reading.timestampMs != null
+                ? String(reading.timestampMs)
+                : `history-${index}-${tempC}-${humidity}`;
+            firebaseChartIds.add(id);
+            const timestamp = Number(reading.timestampMs);
+            const label = Number.isFinite(timestamp) && timestamp > 0
+                ? new Date(timestamp).toLocaleTimeString()
+                : `Reading ${index + 1}`;
+            telemetryChart.data.labels.push(label);
+            telemetryChart.data.datasets[0].data.push(tempC);
+            telemetryChart.data.datasets[1].data.push(humidity);
+            telemetryChart.data.datasets[2].data.push(TEMP_LIMIT);
+        });
+        telemetryChart.update('none');
+    };
+
+    // Fallback/live plotting: add each new `latest` reading as well, so the
+    // graph continues to move even when history is empty or slow to refresh.
+    window.addFirebaseLatestPoint = function(reading) {
+        const tempC = Number(reading.temperatureC);
+        const humidity = Number(reading.humidity);
+        if (!Number.isFinite(tempC) || !Number.isFinite(humidity)) return;
+
+        const id = reading.timestampMs != null
+            ? String(reading.timestampMs)
+            : `latest-${tempC}-${humidity}`;
+        if (firebaseChartIds.has(id)) return;
+        firebaseChartIds.add(id);
+
+        telemetryChart.data.labels.push(
+            Number(reading.timestampMs) > 0
+                ? new Date(Number(reading.timestampMs)).toLocaleTimeString()
+                : new Date().toLocaleTimeString()
+        );
+        telemetryChart.data.datasets[0].data.push(tempC);
+        telemetryChart.data.datasets[1].data.push(humidity);
+        telemetryChart.data.datasets[2].data.push(TEMP_LIMIT);
+
+        while (telemetryChart.data.labels.length > MAX_POINTS) {
+            telemetryChart.data.labels.shift();
+            telemetryChart.data.datasets.forEach(dataset => dataset.data.shift());
+        }
+        telemetryChart.update('none');
+    };
+
+</script>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getDatabase, ref, onValue, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyA4wUq2UunwdRqVvM1DJLUVnXn7zllqt84",
+        authDomain: "temperature-5544d.firebaseapp.com",
+        databaseURL: "https://temperature-5544d-default-rtdb.firebaseio.com",
+        projectId: "temperature-5544d",
+        storageBucket: "temperature-5544d.firebasestorage.app",
+        messagingSenderId: "646915064323",
+        appId: "1:646915064323:web:bb9f236519225321610436",
+        measurementId: "G-B96SKDHDW8"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const database = getDatabase(app);
+    const loginForm = document.getElementById("firebaseLoginForm");
+    const loginButton = document.getElementById("firebaseLoginButton");
+    const signOutButton = document.getElementById("firebaseSignOutButton");
+    const connectionStatus = document.getElementById("firebaseConnectionStatus");
+    let stopLatestListener = null;
+    let stopHistoryListener = null;
+    let packetNumber = 0;
+
+    function showConnection(message, isError = false) {
+        connectionStatus.textContent = message;
+        connectionStatus.className = "text-sm " + (isError ? "text-rose-300" : "text-emerald-300");
+        if (typeof window.logMessage === "function") window.logMessage(message, isError ? "error" : "success");
+    }
+
+    function stopListeners() {
+        if (stopLatestListener) stopLatestListener();
+        if (stopHistoryListener) stopHistoryListener();
+        stopLatestListener = null;
+        stopHistoryListener = null;
+    }
+
+    function startListeners(user) {
+        stopListeners();
+        showConnection("Signed in. Listening for Firebase sensor updates…");
+        signOutButton.classList.remove("hidden");
+        loginButton.disabled = true;
+        loginButton.textContent = "Connected";
+
+        stopLatestListener = onValue(ref(database, "latest"), snapshot => {
+            const reading = snapshot.val();
+            if (!reading) {
+                showConnection("Connected, but no latest reading exists yet.");
+                return;
+            }
+            const tempC = Number(reading.temperatureC);
+            const tempF = Number(reading.temperatureF ?? (tempC * 9 / 5 + 32));
+            const humidity = Number(reading.humidity);
+            if (![tempC, tempF, humidity].every(Number.isFinite)) {
+                showConnection("Firebase latest reading has an unexpected format.", true);
+                return;
+            }
+            packetNumber += 1;
+            window.updateLatest(tempC, tempF, humidity, packetNumber);
+            if (typeof window.addFirebaseLatestPoint === "function") {
+                window.addFirebaseLatestPoint(reading);
+            }
+            showConnection(`Live: ${tempC.toFixed(1)} °C · ${humidity.toFixed(1)}% humidity`);
+        }, error => showConnection(`Latest read failed: ${error.message}`, true));
+
+        const historyQuery = query(ref(database, "sensorReadings"), orderByChild("timestampMs"), limitToLast(30));
+        stopHistoryListener = onValue(historyQuery, snapshot => {
+            const value = snapshot.val();
+            const readings = value ? Object.values(value).sort((a, b) => Number(a.timestampMs || 0) - Number(b.timestampMs || 0)) : [];
+            window.replaceChartFromFirebase(readings);
+            if (readings.length && typeof window.logMessage === "function") {
+                window.logMessage(`Loaded ${readings.length} Firebase history reading(s).`, "success");
+            }
+        }, error => showConnection(`History read failed: ${error.message}`, true));
+    }
+
+    loginForm.addEventListener("submit", async event => {
+        event.preventDefault();
+        loginButton.disabled = true;
+        loginButton.textContent = "Signing in…";
+        connectionStatus.textContent = "Signing in to Firebase…";
+        try {
+            await signInWithEmailAndPassword(auth,
+                document.getElementById("firebaseEmail").value.trim(),
+                document.getElementById("firebasePassword").value);
+            document.getElementById("firebasePassword").value = "";
+        } catch (error) {
+            showConnection(`Sign-in failed: ${error.code || error.message}`, true);
+            loginButton.disabled = false;
+            loginButton.textContent = "Sign in and connect";
+        }
+    });
+
+    signOutButton.addEventListener("click", async () => {
+        stopListeners();
+        await signOut(auth);
+    });
+
+    onAuthStateChanged(auth, user => {
+        if (user) {
+            startListeners(user);
+        } else {
+            stopListeners();
+            signOutButton.classList.add("hidden");
+            loginButton.disabled = false;
+            loginButton.textContent = "Sign in and connect";
+            connectionStatus.textContent = "Not connected — sign in to load live readings.";
+            connectionStatus.className = "text-sm text-amber-300";
+        }
+    });
+</script>
+
+</body>
+</html>
